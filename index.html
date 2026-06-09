@@ -1,0 +1,209 @@
+<!-- #### 檔案：Index.html -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Kaiti&display=swap" rel="stylesheet">
+    <?!= include('Stylesheet'); ?>
+  </head>
+  <body>
+    <!-- 頂部導航 -->
+    <nav class="top-nav">
+      <div class="nav-brand">四年甲班</div>
+      <div class="nav-pills">
+        <button class="nav-item active" onclick="setTab('homework')">追蹤系統</button>
+        <button class="nav-item" onclick="setTab('contact')">聯絡簿</button>
+        <button class="nav-item" onclick="toggleSplitMode()">分屏</button>
+        <button class="nav-item icon-only" onclick="toggleMagic()" title="特效">🪄</button>
+        <button class="nav-item icon-only" onclick="openLuckyDraw()" title="抽籤">🎲</button>
+      </div>
+    </nav>
+
+    <!-- 特效與視窗 -->
+    <div id="magic-container"></div>
+    
+    <!-- 月曆視窗 -->
+    <div id="calendar-modal" class="modal-overlay hidden" onclick="closeCalendar(event)">
+      <div class="modal-box cal-box" onclick="event.stopPropagation()">
+        <div class="cal-header">
+          <button class="cal-nav-btn" onclick="changeCalMonth(-12)" title="上一年">«</button>
+          <button class="cal-nav-btn" onclick="changeCalMonth(-1)" title="上個月">‹</button>
+          <span id="cal-month-year" class="cal-title">2026年 3月</span>
+          <button class="cal-nav-btn" onclick="changeCalMonth(1)" title="下個月">›</button>
+          <button class="cal-nav-btn" onclick="changeCalMonth(12)" title="下一年">»</button>
+        </div>
+        <div class="cal-weekdays">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div class="cal-days" id="cal-days"></div>
+        <div class="cal-footer">
+          <button class="tool-btn-purple cal-today-btn" onclick="selectToday()">📍 回到今天</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 抽籤視窗 -->
+    <div id="lucky-modal" class="modal-overlay hidden">
+      <div class="modal-box lucky-modal-wide">
+        <div class="modal-header">
+          <h3>🏆 天選之人</h3>
+          <button class="close-btn" onclick="closeLuckyDraw()">×</button>
+        </div>
+        <div class="lucky-split-layout">
+          <div class="lucky-left">
+            <div class="lucky-stage">
+              <div id="lucky-display" class="lucky-number">?</div>
+              <div style="display: flex; gap: 10px; width: 100%; justify-content: center;">
+                <button id="spin-btn" class="spin-btn" onclick="startLuckyDraw()">開始抽籤</button>
+                <button class="spin-btn" style="background: #999; padding: 10px 20px;" onclick="resetLuckyDraw()" title="全班重新洗牌">🔄</button>
+              </div>
+            </div>
+          </div>
+          <div class="lucky-right">
+            <div class="attendance-filter">
+              <p>灰色為已抽出或缺席者 (點擊切換)：</p>
+              <div id="lucky-grid" class="filter-grid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LINE 通知視窗 -->
+    <div id="notify-modal" class="modal-overlay hidden">
+      <div class="modal-box notify-box">
+        <div class="modal-header">
+          <h3>🔔 關懷通知產生器</h3>
+          <button class="close-btn" onclick="closeNotifyModal()">×</button>
+        </div>
+        <div class="notify-desc">
+          系統已篩選出缺交 <b>2項以上</b> 的學生，文案已隨機變化，點擊「複製」即可貼到家長 LINE。
+        </div>
+        <div id="notify-list" class="notify-list">
+          <div class="loading-text">正在分析作業資料...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DJ 台 -->
+    <div id="dj-btn" class="dj-float-btn" onclick="toggleDJPanel()">🎵</div>
+    <div id="dj-panel" class="dj-panel hidden">
+      <div class="dj-header"><span>🎧 教室 DJ 台</span><button class="close-dj" onclick="toggleDJPanel()">_</button></div>
+      <div class="dj-controls">
+        <button class="dj-item" onclick="playMusic('focus')"><span class="dj-icon">📚</span> 專注</button>
+        <button class="dj-item" onclick="playMusic('energy')"><span class="dj-icon">☀️</span> 活力</button>
+        <button class="dj-item" onclick="playMusic('relax')"><span class="dj-icon">🛌</span> 午休</button>
+        <button class="dj-item" onclick="playMusic('party')"><span class="dj-icon">🎉</span> 慶祝</button>
+      </div>
+      <div class="dj-status"><span id="now-playing">準備就緒...</span><button class="stop-btn" onclick="stopMusic()">⏹ 停止</button></div>
+      <audio id="audio-player"></audio>
+    </div>
+
+    <div class="main-container" id="mainContainer">
+      <div id="view-homework" class="view-section homework-theme">
+        <div class="hw-layout">
+          <!-- 左側 -->
+          <div class="hw-left" id="track-panel">
+            <div class="mode-switcher">
+              <button id="mode-btn-hw" class="mode-btn active" onclick="switchMode('homework')">📚 作業模式</button>
+              <button id="mode-btn-admin" class="mode-btn" onclick="switchMode('admin')">📂 行政模式</button>
+            </div>
+
+            <div class="hw-tools-header">
+               <div class="date-bar">
+                <button onclick="changeDate(-1)" title="前一天">&lt;</button>
+                <div class="date-display" onclick="openCalendar()">
+                  <span id="hwDateText">Waiting...</span>
+                </div>
+                <button onclick="changeDate(1)" title="後一天">&gt;</button>
+              </div>
+              <div class="font-controls">
+                <button class="tool-btn-purple" onclick="adjustHwFontSize(-2)">A-</button>
+                <button class="tool-btn-purple" onclick="adjustHwFontSize(2)">A+</button>
+              </div>
+            </div>
+            
+            <div style="margin: 10px 0; display:flex; justify-content: flex-end; gap: 8px;">
+               <button class="tool-btn-purple" style="border:none; padding: 6px 12px; border-radius: 20px;" onclick="cleanUpRecords()">🧹 清理舊紀錄</button>
+               <button class="tool-btn-orange" onclick="openNotifyModal()">🔔 產生關懷通知</button>
+            </div>
+
+            <div class="input-card">
+              <input type="text" id="taskName" placeholder="作業名稱 (如: 數習 P.20)" class="clean-input hw-dynamic-font">
+            </div>
+
+            <div class="stats-bar hw-dynamic-font">
+              <span class="stat-label">點 <span class="highlight" id="done-text" style="color:var(--purple-main);">已交</span></span>
+              <div class="spacer"></div>
+              <span class="stat-text">已交: <span id="submitCount" class="green-text">0</span></span>
+              <span class="stat-text">未交: <span id="missingCount" class="red-text">25</span></span>
+              <button class="btn-select-all hw-dynamic-font" onclick="toggleAllSeats()">全選</button>
+            </div>
+
+            <div class="seat-grid" id="seatGrid"></div>
+            
+            <!-- 🌟 修改：儲存按鈕區塊 -->
+            <button id="btn-save-new" class="btn-save-hw hw-dynamic-font" onclick="saveRecord()">新增儲存</button>
+            <button id="btn-cancel-edit" class="btn-save-hw hw-dynamic-font hidden" style="background:#888;" onclick="cancelEditMode()">❌ 完成並離開編輯模式</button>
+            
+            <div id="auto-save-hint" style="text-align: center; color: var(--edit-mode-color); font-size: 0.8rem; margin-top: 5px; display: none;">
+              ⚡ 點擊座號已自動存檔
+            </div>
+
+          </div>
+
+          <!-- 右側清單 -->
+          <div class="hw-right">
+            <div class="list-header hw-dynamic-font" id="list-header-text"><span class="icon">📋</span> 作業追蹤清單</div>
+            <div class="list-section">
+              <div class="section-title green-bg hw-dynamic-font">📅 今日新增</div>
+              <div id="listToday" class="card-container"></div>
+            </div>
+            <div class="list-section">
+              <div class="section-title pink-bg hw-dynamic-font">🕰️ 累積欠債</div>
+              <div id="listHistory" class="card-container"></div>
+            </div>
+            <div id="noDataMsg" class="no-data hidden hw-dynamic-font">無紀錄</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 頁面 2: 聯絡簿 -->
+      <div id="view-contact" class="view-section blackboard-theme hidden">
+        <div class="blackboard-frame">
+          <div class="board-header">
+            <div class="star-title">★ 今日聯絡簿</div>
+            <div class="board-date-control">
+               <button onclick="changeDate(-1)">&lt;</button>
+               <span id="boardDateText" onclick="openCalendar()" style="cursor:pointer; border-bottom: 1px dashed #FDD835;"></span>
+               <button onclick="changeDate(1)">&gt;</button>
+            </div>
+            <div class="board-tools">
+              <button class="tool-btn" onclick="adjustBoardFontSize(-2)">-</button>
+              <span style="color:#aaa; font-size:12px;">Aa</span>
+              <button class="tool-btn" onclick="adjustBoardFontSize(2)">+</button>
+              <button class="tool-btn yellow" onclick="saveComm()">編輯 / 儲存</button>
+            </div>
+          </div>
+          <div class="board-content">
+            <div class="board-col">
+              <div class="col-items" id="contactItems"></div>
+              <button class="add-chalk-btn" onclick="addBoardItem('contactItems')">+</button>
+            </div>
+            <div class="board-divider"></div>
+            <div class="board-col">
+              <div class="col-header-text">早自修 / 交辦事項</div>
+              <div class="col-items" id="studyItems"></div>
+              <button class="add-chalk-btn" onclick="addBoardItem('studyItems')">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="loading" class="loading-overlay hidden">
+      <div class="spinner"></div>
+    </div>
+    <?!= include('JavaScript'); ?>
+  </body>
+</html>

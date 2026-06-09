@@ -1,0 +1,536 @@
+<!-- #### 檔案：JavaScript.html -->
+<script>
+  let currentDate = new Date();
+  let submittedSeats = new Set(); 
+  let isSplitMode = false;
+  let boardFontSize = 24;
+  let hwFontSize = 16;
+  let isMagicOn = false;
+  let magicInterval = null;
+  let absentSeats = new Set(); 
+  let isSpinning = false;
+  let editingRowIndex = null;
+  const TOTAL_SEATS = 25; 
+  let currentMode = 'homework'; 
+  let autoRefreshTimer = null;
+  let calendarViewDate = new Date(); 
+
+  window.homeworkDataCache = [];
+
+  const studentNames = [
+    "", 
+    "禹彤", "妮艾", "予禎", "佩停", "奕安",
+    "惠喬", "言安", "晧妍", "宥柔", "品皓",
+    "柚希", "愷宸", "周官", "偉泓", "禹丞",
+    "容郡", "紹亦", "守志", "希諺", "硯智",
+    "冠穎", "孟宸", "冠佑", "善妍", "庠懿"
+  ];
+
+  const notifyTemplates = [
+    (name, count, tasks) => `親愛的 ${name}家長您好 🌟\n最近觀察到孩子在學習上遇到了一點小亂流，目前還有 ${count} 項作業需要補強：\n${tasks}\n孩子的潛力很大，這幾項完成後一定能跟上進度！💪\n希望能請您在家多撥冗關心，我們親師合作，一起陪伴孩子建立負責的態度。\n謝謝您的辛勞！❤️`,
+    (name, count, tasks) => `親愛的 ${name}家長好 ☀️\n${name} 在學校其實很聰明，只是最近在作業繳交上稍微鬆懈了一些。\n系統顯示目前缺交項目如下：\n${tasks}\n這是孩子成長過程中的小考驗，相信在家長的提醒與鼓勵下，${name} 一定能展現出更好的自我！✨\n讓我們一起為孩子加油！`,
+    (name, count, tasks) => `您好，我是班導師 👋\n想跟您分享 ${name} 最近的學習狀況。目前有幾項作業尚未完成，需要我們共同協助督促：\n${tasks}\n養成今日事今日畢的習慣對孩子未來很有幫助。\n麻煩家長協助提醒孩子利用時間完成，非常感謝您的配合與支持！🤝`,
+    (name, count, tasks) => `親愛的 ${name}家長好 🌈\n${name} 是個很棒的孩子，如果能在作業管理上更積極一點就更完美了！\n這裡有幾項待補的作業清單：\n${tasks}\n只要把這些小石頭搬開，學習之路就會更順暢。\n期待看到孩子的進步，我們一起努力！🚀`,
+    (name, count, tasks) => `【關懷通知】親愛的 ${name}家長您好 🔔\n提醒您，孩子目前尚有 ${count} 項作業待補，詳情如下：\n${tasks}\n請協助督促孩子儘速完成，以免影響學習成效。\n感謝您的協助！😊`
+  ];
+
+  const musicSources = {
+    'focus': 'https://cdn.pixabay.com/audio/2022/01/18/audio_d0a13f69d2.mp3',
+    'energy': 'https://cdn.pixabay.com/audio/2021/08/09/audio_88447e769f.mp3',
+    'relax': 'https://cdn.pixabay.com/audio/2022/10/05/audio_6861212529.mp3',
+    'party': 'https://cdn.pixabay.com/audio/2021/08/04/audio_0625c153e2.mp3'
+  };
+
+  window.onload = function() {
+    renderDates();
+    renderSeats();
+    loadHomeworkList(false); 
+    loadBoardData();
+    toggleMagic(); 
+    startAutoRefresh();
+  };
+
+  function cleanUpRecords() {
+    if(!confirm("這將會徹底刪除「作業與行政」中超過 30 天以上的舊資料（藉此大幅提升系統速度）。\n\n確定要執行嗎？")) return;
+    document.getElementById('loading').classList.remove('hidden');
+    google.script.run
+      .withSuccessHandler((res) => {
+        document.getElementById('loading').classList.add('hidden');
+        alert(res.message);
+        loadHomeworkList(false); 
+      })
+      .withFailureHandler((err) => {
+        document.getElementById('loading').classList.add('hidden');
+        alert("清理失敗，請重試！");
+      })
+      .clearOldData();
+  }
+
+  function openCalendar() { calendarViewDate = new Date(currentDate); renderCalendarGrid(); document.getElementById('calendar-modal').classList.remove('hidden'); }
+  function closeCalendar(e) { if(e && e.target.id === 'calendar-modal') { document.getElementById('calendar-modal').classList.add('hidden'); } else if (!e) { document.getElementById('calendar-modal').classList.add('hidden'); } }
+  function changeCalMonth(deltaMonths) { calendarViewDate.setMonth(calendarViewDate.getMonth() + deltaMonths); renderCalendarGrid(); }
+  function selectToday() { selectDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()); }
+  function selectDate(year, month, day) { currentDate = new Date(year, month, day); renderDates(); loadBoardData(); loadHomeworkList(false); closeCalendar(); }
+  function renderCalendarGrid() {
+    const year = calendarViewDate.getFullYear(); const month = calendarViewDate.getMonth(); 
+    document.getElementById('cal-month-year').innerText = `${year}年 ${month + 1}月`;
+    const firstDayIndex = new Date(year, month, 1).getDay(); const daysInMonth = new Date(year, month + 1, 0).getDate(); const daysInPrevMonth = new Date(year, month, 0).getDate(); 
+    const grid = document.getElementById('cal-days'); grid.innerHTML = '';
+    const today = new Date(); const tY = today.getFullYear(), tM = today.getMonth(), tD = today.getDate();
+    const sY = currentDate.getFullYear(), sM = currentDate.getMonth(), sD = currentDate.getDate();
+    for (let i = 0; i < firstDayIndex; i++) {
+      const d = daysInPrevMonth - firstDayIndex + 1 + i; const prevM = month === 0 ? 11 : month - 1; const prevY = month === 0 ? year - 1 : year;
+      grid.innerHTML += `<div class="cal-day other-month" onclick="selectDate(${prevY}, ${prevM}, ${d})">${d}</div>`;
+    }
+    for (let i = 1; i <= daysInMonth; i++) {
+      let classes = 'cal-day';
+      if (year === tY && month === tM && i === tD) classes += ' today'; 
+      if (year === sY && month === sM && i === sD) classes += ' selected'; 
+      grid.innerHTML += `<div class="${classes}" onclick="selectDate(${year}, ${month}, ${i})">${i}</div>`;
+    }
+    const nextDays = 42 - (firstDayIndex + daysInMonth);
+    for (let i = 1; i <= nextDays; i++) {
+      const nextM = month === 11 ? 0 : month + 1; const nextY = month === 11 ? year + 1 : year;
+      grid.innerHTML += `<div class="cal-day other-month" onclick="selectDate(${nextY}, ${nextM}, ${i})">${i}</div>`;
+    }
+  }
+
+  function startAutoRefresh() {
+    autoRefreshTimer = setInterval(() => {
+      if (editingRowIndex !== null) return; 
+      const activeElement = document.activeElement;
+      if (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA') return;
+      loadHomeworkList(true);
+      loadBoardDataSilent(); 
+    }, 15000); 
+  }
+  function loadBoardDataSilent() {
+    google.script.run.withSuccessHandler(res => {
+      if (document.activeElement.tagName !== 'TEXTAREA') {
+        document.getElementById('contactItems').innerHTML = ''; document.getElementById('studyItems').innerHTML = '';
+        const contacts = res.contact ? res.contact.split('\n') : []; const studies = res.study ? res.study.split('\n') : [];
+        if (contacts.length === 0) addBoardItem('contactItems'); else contacts.forEach(t => addBoardItem('contactItems', t));
+        if (studies.length === 0) addBoardItem('studyItems'); else studies.forEach(t => addBoardItem('studyItems', t));
+      }
+    }).getCommData(getFormattedDateStr());
+  }
+
+  function openNotifyModal() {
+    document.getElementById('notify-modal').classList.remove('hidden');
+    document.getElementById('notify-list').innerHTML = '<div class="loading-text">正在分析作業資料...</div>';
+    google.script.run.withSuccessHandler(renderNotifyList).withFailureHandler(()=>{document.getElementById('notify-list').innerHTML = '分析失敗';}).getAtRiskStudents();
+  }
+  function closeNotifyModal() { document.getElementById('notify-modal').classList.add('hidden'); }
+  function renderNotifyList(students) {
+    const list = document.getElementById('notify-list'); list.innerHTML = '';
+    if (students.length === 0) { list.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">🎉 太棒了！目前沒有缺交 2 項以上的學生。</div>'; return; }
+    students.forEach(s => {
+      const item = document.createElement('div'); item.className = 'notify-item';
+      const seatNum = parseInt(s.seat); const studentName = (studentNames[seatNum]) ? studentNames[seatNum] : `${s.seat}號`;
+      const template = notifyTemplates[Math.floor(Math.random() * notifyTemplates.length)];
+      const msg = template(studentName, s.count, s.tasks.join('\n'));
+      item.innerHTML = `<div class="notify-header"><span class="notify-title">${s.seat}號 ${studentName} (缺 ${s.count} 項)</span></div><div class="notify-body">${msg}</div><button class="copy-btn-large" onclick="copyNotifyText(this)">複製通知內容</button>`;
+      list.appendChild(item);
+    });
+  }
+  function copyNotifyText(btn) {
+    const text = btn.previousElementSibling.innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      const originalText = btn.innerText; btn.innerText = '✅ 已複製'; btn.style.background = '#4CAF50';
+      setTimeout(() => { btn.innerText = originalText; btn.style.background = ''; }, 1500);
+    });
+  }
+
+  function renderSeats() {
+    const grid = document.getElementById('seatGrid'); grid.innerHTML = '';
+    for (let i = 1; i <= TOTAL_SEATS; i++) {
+      const btn = document.createElement('button'); btn.className = 'seat-btn'; 
+      const name = studentNames[i] || '';
+      if(name) btn.innerHTML = `<div class="seat-num">${i}</div><div class="seat-name">${name}</div>`;
+      else btn.innerHTML = `<div class="seat-num">${i}</div>`;
+      btn.onclick = () => toggleSeat(i, btn); grid.appendChild(btn);
+    }
+    submittedSeats.clear(); updateStats();
+  }
+
+  function openLuckyDraw() { document.getElementById('lucky-modal').classList.remove('hidden'); renderLuckyGrid(); }
+  function closeLuckyDraw() { document.getElementById('lucky-modal').classList.add('hidden'); }
+  function renderLuckyGrid() {
+    const grid = document.getElementById('lucky-grid'); grid.innerHTML = '';
+    for (let i = 1; i <= TOTAL_SEATS; i++) {
+      const dot = document.createElement('div'); dot.className = 'filter-dot'; 
+      if (absentSeats.has(i)) dot.classList.add('absent'); 
+      dot.innerText = i; dot.onclick = () => toggleAbsent(i, dot); grid.appendChild(dot); 
+    } 
+  }
+  function toggleAbsent(i, el) { 
+    if (absentSeats.has(i)) { absentSeats.delete(i); el.classList.remove('absent'); } 
+    else { absentSeats.add(i); el.classList.add('absent'); } 
+  }
+  function resetLuckyDraw() { absentSeats.clear(); renderLuckyGrid(); document.getElementById('lucky-display').innerText = '?'; document.getElementById('lucky-display').style.color = ''; alert("🔄 抽籤名單已重新洗牌！"); }
+  function startLuckyDraw() {
+    if (isSpinning) return;
+    const candidates = [];
+    for (let i = 1; i <= TOTAL_SEATS; i++) { if (!absentSeats.has(i)) candidates.push(i); }
+    if (candidates.length === 0) { alert("🎉 全班都已經被抽過一輪囉！請點擊旁邊的『🔄按鈕』重新洗牌。"); return; }
+    isSpinning = true; document.getElementById('spin-btn').disabled = true;
+    const display = document.getElementById('lucky-display');
+    let speed = 50; let round = 0; let finalWinner = null;
+    function loop() {
+      const randIndex = Math.floor(Math.random() * candidates.length);
+      finalWinner = candidates[randIndex]; display.innerText = finalWinner;
+      if (round < 20) speed = 50; else if (round < 30) speed += 20;
+      else { 
+        isSpinning = false; document.getElementById('spin-btn').disabled = false;
+        display.style.color = '#E91E63'; display.style.transform = 'scale(1.2)';
+        setTimeout(() => { display.style.color = ''; display.style.transform = ''; }, 1000);
+        if(isMagicOn) for(let k=0; k<10; k++) setTimeout(createParticle, k*100);
+        absentSeats.add(finalWinner); renderLuckyGrid(); return; 
+      }
+      round++; setTimeout(loop, speed);
+    }
+    loop();
+  }
+
+  function switchMode(mode) {
+    currentMode = mode; cancelEditMode(); 
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    const activeBtn = document.getElementById('mode-btn-' + mode); if(activeBtn) activeBtn.classList.add('active');
+    if (mode === 'admin') {
+      document.body.classList.add('admin-mode');
+      document.getElementById('list-header-text').innerHTML = '<span class="icon">📂</span> 行政事務清單';
+      document.getElementById('taskName').placeholder = "事項名稱 (如: 流感回條、班費)";
+    } else {
+      document.body.classList.remove('admin-mode');
+      document.getElementById('list-header-text').innerHTML = '<span class="icon">📋</span> 作業追蹤清單';
+      document.getElementById('taskName').placeholder = "作業名稱 (如: 數習 P.20)";
+    }
+    loadHomeworkList(false); 
+  }
+
+  function toggleDJPanel() { document.getElementById('dj-panel').classList.toggle('hidden'); }
+  function playMusic(type) { const p=document.getElementById('audio-player'); p.src=musicSources[type]; p.loop=(type!=='party'); p.play(); document.getElementById('now-playing').innerText='播放中...'; }
+  function stopMusic() { document.getElementById('audio-player').pause(); document.getElementById('now-playing').innerText='已停止';}
+  function toggleMagic() {
+    isMagicOn = !isMagicOn; const btn = document.querySelector('.nav-item.icon-only');
+    if (isMagicOn) { if(btn) btn.style.background = '#F3E5F5'; createParticle(); magicInterval = setInterval(createParticle, 800); }
+    else { if(btn) btn.style.background = 'transparent'; clearInterval(magicInterval); document.getElementById('magic-container').innerHTML = ''; }
+  }
+
+  function getFormattedDateStr(dateObj) {
+    const d = dateObj || currentDate;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  
+  function setTab(tab) {
+    if (isSplitMode) return;
+    document.querySelectorAll('.nav-item').forEach(b => { if(!b.classList.contains('icon-only')) b.classList.remove('active'); });
+    const btns = document.querySelectorAll('.nav-item');
+    if(tab==='homework') btns[0].classList.add('active'); if(tab==='contact') btns[1].classList.add('active');
+    document.querySelectorAll('.view-section').forEach(v => v.classList.add('hidden'));
+    if (tab === 'homework') document.getElementById('view-homework').classList.remove('hidden');
+    else document.getElementById('view-contact').classList.remove('hidden');
+  }
+  
+  function toggleSplitMode() {
+    isSplitMode = !isSplitMode; const btn = document.querySelectorAll('.nav-item')[2];
+    const main = document.getElementById('mainContainer');
+    const v1 = document.getElementById('view-homework'); const v2 = document.getElementById('view-contact');
+    if (isSplitMode) {
+      btn.classList.add('active'); v1.classList.remove('hidden'); v2.classList.remove('hidden');
+      main.style.display = 'grid'; main.style.gridTemplateColumns = '1fr 1fr';
+      v1.style.position = 'relative'; v2.style.position = 'relative'; document.querySelector('.hw-layout').style.flexDirection = 'column';
+    } else {
+      btn.classList.remove('active'); main.style.display = 'block';
+      v1.style.position = 'absolute'; v2.style.position = 'absolute'; setTab('homework');
+    }
+  }
+
+  function renderDates() {
+    const str = getFormattedDateStr();
+    const hwDateText = document.getElementById('hwDateText');
+    if(hwDateText) hwDateText.innerText = str.replace(/-/g, ' / ');
+    const hwDatePicker = document.getElementById('hwDatePicker');
+    if(hwDatePicker) hwDatePicker.value = str;
+    const boardDateText = document.getElementById('boardDateText');
+    if(boardDateText) boardDateText.innerText = str.replace(/-/g, ' / ');
+  }
+
+  function changeDate(delta) { currentDate.setDate(currentDate.getDate() + delta); renderDates(); loadBoardData(); loadHomeworkList(false); }
+  function adjustHwFontSize(d) { hwFontSize += d; if(hwFontSize<12) hwFontSize=12; if(hwFontSize>30) hwFontSize=30; document.documentElement.style.setProperty('--hw-font-size', hwFontSize+'px'); }
+
+  // --- 🌟 核心修改：即點即存邏輯 ---
+  function toggleSeat(seat, btn) {
+    if (submittedSeats.has(seat)) { 
+      submittedSeats.delete(seat); btn.classList.remove('done'); 
+    } else { 
+      submittedSeats.add(seat); btn.classList.add('done'); 
+    }
+    updateStats();
+    
+    // 💡 如果在編輯模式下，點擊座號立刻執行背景儲存！
+    if (editingRowIndex !== null) {
+      autoSaveRecordSilent();
+    }
+  }
+
+  function toggleAllSeats() {
+    const btns = document.querySelectorAll('.seat-btn');
+    if (submittedSeats.size < TOTAL_SEATS) { for(let i=1; i<=TOTAL_SEATS; i++) submittedSeats.add(i); btns.forEach(b => b.classList.add('done')); }
+    else { submittedSeats.clear(); btns.forEach(b => b.classList.remove('done')); }
+    updateStats();
+    
+    // 全選/全取消也支援自動存檔
+    if (editingRowIndex !== null) autoSaveRecordSilent();
+  }
+
+  function updateStats() {
+    const s = submittedSeats.size; const m = TOTAL_SEATS - s;
+    document.getElementById('submitCount').innerText = s; document.getElementById('missingCount').innerText = m;
+  }
+
+  // 靜默儲存（不顯示 loading 圈圈，讓操作無中斷感）
+  function autoSaveRecordSilent() {
+    let missingList = [];
+    for(let i=1; i<=TOTAL_SEATS; i++) { if(!submittedSeats.has(i)) missingList.push(i); }
+    
+    const data = {
+      dateStr: getFormattedDateStr(), 
+      taskName: document.getElementById('taskName').value,
+      missingSeats: missingList.join(','),
+      note: '',
+      rowIndex: editingRowIndex 
+    };
+    
+    // 顯示一個小小的提示字「閃爍一下」，讓使用者知道存檔了
+    const hint = document.getElementById('auto-save-hint');
+    hint.style.display = 'block';
+    setTimeout(() => { hint.style.display = 'none'; }, 1000);
+
+    const runner = google.script.run.withSuccessHandler(() => {
+      // 背景偷偷刷新右側清單
+      loadHomeworkList(true); 
+      
+      // 如果全交了，自動退出編輯模式
+      if (missingList.length === 0) {
+        setTimeout(cancelEditMode, 800); // 稍微延遲一下，讓老師看到全綠
+      }
+    });
+    
+    if (currentMode === 'admin') runner.saveAdminData(data);
+    else runner.saveHomeworkData(data);
+  }
+
+  // 原本的手動儲存按鈕（新增時使用）
+  function saveRecord() {
+    const taskName = document.getElementById('taskName').value;
+    if (!taskName.trim()) { alert("請輸入項目名稱！"); return; }
+    document.getElementById('loading').classList.remove('hidden');
+    let missingList = [];
+    for(let i=1; i<=TOTAL_SEATS; i++) { if(!submittedSeats.has(i)) missingList.push(i); }
+    
+    const data = {
+      dateStr: getFormattedDateStr(), 
+      taskName: taskName,
+      missingSeats: missingList.join(','),
+      note: '',
+      rowIndex: editingRowIndex 
+    };
+    
+    const runner = google.script.run.withSuccessHandler((res) => {
+      document.getElementById('loading').classList.add('hidden');
+      alert(res.message);
+      cancelEditMode(); 
+      loadHomeworkList(false); 
+    }).withFailureHandler(err => {
+      document.getElementById('loading').classList.add('hidden');
+      alert("儲存失敗，請重試");
+    });
+    
+    if (currentMode === 'admin') runner.saveAdminData(data);
+    else runner.saveHomeworkData(data);
+  }
+
+  function loadHomeworkList(isSilent = false) {
+    if (!isSilent) document.getElementById('loading').classList.remove('hidden');
+    const runner = google.script.run.withSuccessHandler(res => {
+      if (!isSilent) document.getElementById('loading').classList.add('hidden');
+      const hwRight = document.querySelector('.hw-right');
+      const scrollTop = hwRight ? hwRight.scrollTop : 0;
+      
+      window.homeworkDataCache = [];
+      let cacheIndex = 0;
+      
+      res.today.forEach(item => { item.cacheId = cacheIndex++; window.homeworkDataCache.push(item); });
+      res.history.forEach(item => { item.cacheId = cacheIndex++; window.homeworkDataCache.push(item); });
+
+      renderList('listToday', res.today); 
+      renderList('listHistory', res.history);
+      
+      if (hwRight) hwRight.scrollTop = scrollTop;
+      const noData = (res.today.length + res.history.length) === 0;
+      document.getElementById('noDataMsg').classList.toggle('hidden', !noData);
+    }).withFailureHandler(err => {
+      if (!isSilent) document.getElementById('loading').classList.add('hidden');
+      console.log('讀取失敗', err);
+    });
+    
+    if (currentMode === 'admin') runner.getAdminList(); 
+    else runner.getHomeworkList();
+  }
+
+  // --- 🌟 修改：整張卡片皆可點擊 ---
+  function renderList(containerId, list) {
+    const container = document.getElementById(containerId); container.innerHTML = '';
+    list.forEach(item => {
+      const card = document.createElement('div'); 
+      card.className = 'task-card hw-dynamic-font';
+      
+      // 綁定點擊事件到整張卡片
+      card.onclick = () => triggerEdit(item.cacheId);
+      
+      const label = currentMode === 'admin' ? '未交/未完成' : '缺交';
+      
+      card.innerHTML = `
+        <div class="card-top">
+          <span class="card-date">${item.date}</span>
+          <div class="card-actions">
+            <!-- 移除編輯按鈕，只保留複製 (加上 stopPropagation 避免誤觸編輯) -->
+            <button class="copy-btn" onclick="event.stopPropagation(); copyText('${item.missingSeats}')">複製</button>
+            <span class="card-count">${item.count} ${label}</span>
+          </div>
+        </div>
+        <div class="card-title">${item.taskName}</div>
+        <div class="card-names">${item.missingSeats}</div>
+      `;
+      container.appendChild(card);
+    });
+  }
+  
+  function triggerEdit(cacheId) {
+    try {
+      const item = window.homeworkDataCache.find(x => x.cacheId === cacheId);
+      if (item) {
+        editHomework(item);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  
+  function editHomework(item) {
+    try {
+      if (item.date && item.date.includes('-')) {
+        const parts = item.date.split('-');
+        currentDate = new Date(parts[0], parts[1] - 1, parts[2]);
+      } else {
+        currentDate = new Date();
+      }
+      renderDates(); 
+      
+      document.getElementById('taskName').value = item.taskName;
+      submittedSeats.clear();
+      for(let i=1; i<=TOTAL_SEATS; i++) submittedSeats.add(i);
+      
+      const missingArr = String(item.missingSeats).split(',');
+      missingArr.forEach(s => { const num = parseInt(s.trim()); if(!isNaN(num)) submittedSeats.delete(num); });
+      
+      const btns = document.querySelectorAll('.seat-btn');
+      btns.forEach(btn => {
+        let seat = 0;
+        const numDiv = btn.querySelector('.seat-num');
+        if(numDiv) {
+          seat = parseInt(numDiv.innerText);
+        } else {
+          const match = btn.innerText.match(/\d+/);
+          if (match) seat = parseInt(match[0]);
+        }
+        
+        if (seat > 0) {
+          if(submittedSeats.has(seat)) btn.classList.add('done'); 
+          else btn.classList.remove('done');
+        }
+      });
+      
+      updateStats(); 
+      editingRowIndex = item.rowIndex;
+      
+      document.querySelector('.hw-left').classList.add('editing-mode'); 
+      
+      // 🌟 隱藏「新增儲存」，顯示「完成離開」按鈕
+      document.getElementById('btn-save-new').classList.add('hidden');
+      document.getElementById('btn-cancel-edit').classList.remove('hidden');
+      
+      // 安靜地上滑
+      const leftPanel = document.querySelector('.hw-left');
+      if(leftPanel) leftPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }); 
+      
+    } catch(e) {
+      console.error(e);
+    }
+  }
+  
+  function cancelEditMode() {
+    editingRowIndex = null; document.getElementById('taskName').value = '';
+    document.querySelector('.hw-left').classList.remove('editing-mode'); 
+    
+    // 🌟 恢復按鈕狀態
+    document.getElementById('btn-save-new').classList.remove('hidden');
+    document.getElementById('btn-cancel-edit').classList.add('hidden');
+    
+    renderSeats();
+  }
+
+  function copyText(text) { navigator.clipboard.writeText(text).then(() => alert('已複製！')); }
+
+  function adjustBoardFontSize(delta) {
+    boardFontSize += delta; document.querySelectorAll('.chalk-input').forEach(el => { el.style.fontSize = boardFontSize + 'px'; el.style.height = 'auto'; el.style.height = (el.scrollHeight) + 'px'; });
+  }
+  function autoResize(el) { el.style.height = 'auto'; el.style.height = (el.scrollHeight) + 'px'; }
+  function addBoardItem(containerId, text = '') {
+    const container = document.getElementById(containerId); const index = container.children.length + 1;
+    const div = document.createElement('div'); div.className = 'chalk-item';
+    div.innerHTML = `<div class="num-badge">${index}</div><textarea class="chalk-input" rows="1" style="font-size:${boardFontSize}px" placeholder="...">${text}</textarea><button class="del-btn" onclick="deleteBoardItem(this)">×</button>`;
+    const ta = div.querySelector('textarea'); ta.addEventListener('input', function() { autoResize(this); });
+    container.appendChild(div); if(text) setTimeout(() => autoResize(ta), 0);
+  }
+  function deleteBoardItem(btn) {
+    const itemDiv = btn.parentElement; const container = itemDiv.parentElement; itemDiv.remove();
+    const items = container.querySelectorAll('.chalk-item'); items.forEach((item, i) => { const badge = item.querySelector('.num-badge'); badge.innerText = i + 1; });
+  }
+  function saveComm() {
+    document.getElementById('loading').classList.remove('hidden');
+    const getItems = (id) => Array.from(document.querySelectorAll(`#${id} textarea`)).map(el => el.value).filter(v => v.trim() !== '');
+    const data = { dateStr: getFormattedDateStr(), contactItems: getItems('contactItems'), studyItems: getItems('studyItems') };
+    google.script.run.withSuccessHandler((res) => { document.getElementById('loading').classList.add('hidden'); alert(res.message); }).saveCommData(data);
+  }
+  function loadBoardData() {
+    document.getElementById('contactItems').innerHTML = ''; document.getElementById('studyItems').innerHTML = '';
+    google.script.run.withSuccessHandler(res => {
+      const contacts = res.contact ? res.contact.split('\n') : []; const studies = res.study ? res.study.split('\n') : [];
+      if (contacts.length === 0) addBoardItem('contactItems'); else contacts.forEach(t => addBoardItem('contactItems', t));
+      if (studies.length === 0) addBoardItem('studyItems'); else studies.forEach(t => addBoardItem('studyItems', t));
+    }).getCommData(getFormattedDateStr());
+  }
+  function getSeasonIcon() {
+    const m = new Date().getMonth() + 1; const d = new Date().getDate();
+    if (m === 12 && d >= 20) return ['🎄', '🎁', '❄️'];
+    if (m === 10 && d >= 25) return ['🎃', '👻', '🍬'];
+    if (m === 1 || m === 2) return ['🧧', '🧨', '🌸'];
+    if (m >= 3 && m <= 5) return ['🌸', '💮', '🌱'];
+    if (m >= 6 && m <= 8) return ['🍦', '🌻', '🌊'];
+    if (m >= 9 && m <= 11) return ['🍁', '🍂', '🌰'];
+    return ['❄️', '☃️', '🌨️'];
+  }
+  function createParticle() {
+    const c = document.getElementById('magic-container'); if (!c) return;
+    const icons = getSeasonIcon(); const icon = icons[Math.floor(Math.random() * icons.length)];
+    const s = document.createElement('span'); s.innerText = icon; s.className = 'falling-item';
+    s.style.left = Math.random() * 100 + '%'; s.style.fontSize = (Math.random() * 1.5 + 1) + 'rem';
+    s.style.animationDuration = (Math.random() * 5 + 5) + 's';
+    c.appendChild(s); setTimeout(() => s.remove(), 10000);
+  }
+</script>
